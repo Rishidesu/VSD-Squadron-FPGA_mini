@@ -77,23 +77,35 @@ endmodule
 * Word Address: `0x00100008`
 
 ###  Address Decode
+GPIO is mapped to IO space where mem_addr[22] = 1.
+It is selected using bit-based decoding with mem_wordaddr[3].
+The base address can be considered 0x00400020, though the decoding allows multiple mirrored addresses.
+```
+localparam IO_GPIO_bit = 3;
 
-```verilog
-wire gpio_sel   = isIO && (mem_wordaddr == 30'h00100008);
+wire gpio_sel   = isIO && mem_wordaddr[IO_GPIO_bit];
 wire gpio_wr_en = gpio_sel && |mem_wmask;
 wire gpio_rd_en = gpio_sel && mem_rstrb;
 ```
-
 ###  IP Instantiation
 
 ```verilog
+// -----------------------------------
+// GPIO WIRES
+// -----------------------------------
+wire [31:0] gpio_rdata;
+wire [31:0] gpio_data;
+
 gpio_ip GPIO (
     .clk(clk),
     .resetn(resetn),
+
     .wr_en(gpio_wr_en),
     .rd_en(gpio_rd_en),
+
     .wdata(mem_wdata),
     .rdata(gpio_rdata),
+
     .gpio_data(gpio_data)
 );
 ```
@@ -180,53 +192,7 @@ All behaviors matched expected functionality
 
 ---
 
-##  6. Challenges & Fixes
 
-###  Issue 1: Undefined Read Values
-
-**Cause:** Asynchronous read path
-**Fix:** Implemented registered read logic
-
----
-
-###  Issue 2: Incorrect Address Decode
-
-**Fix:**
-
-```verilog
-wire gpio_sel = isIO && (mem_wordaddr == 30'h00100008);
-```
-
----
-
-###  Issue 3: Write Enable Not Triggered
-
-**Fix:**
-
-```verilog
-wire gpio_wr_en = gpio_sel && |mem_wmask;
-```
-
----
-
-###  Issue 4: Simulation Not Terminating
-
-**Fix:** Added `ecall` instruction in firmware
-
----
-
-###  Issue 5: Build Errors (Bare-metal)
-
-**Cause:** Missing standard headers
-**Fix:** Replaced with custom IO macros
-
-```c
-#define IO_BASE 0x400000
-#define IO_IN(port)       *(volatile unsigned int*)(IO_BASE + port)
-#define IO_OUT(port,val)  *(volatile unsigned int*)(IO_BASE + port) = (val)
-```
-
----
 
 ##  7. Conclusion
 
