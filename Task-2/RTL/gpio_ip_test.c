@@ -1,70 +1,38 @@
-#include "io.h"
-
 #define IO_BASE     0x00400000
-#define UART_ADDR   (IO_BASE + 0x04)
 #define GPIO_ADDR   (IO_BASE + 0x20)
 
-int main(void);
+volatile unsigned int *gpio = (unsigned int *)GPIO_ADDR;
+
+// simple delay (needed to see waveform changes)
+void delay() {
+    for (volatile int i = 0; i < 50000; i++);
+}
 
 void _start(void)
 {
-    main();
-    while (1);   // never reached in simulation
-}
+    unsigned int val = 0;
 
-static inline void uart_putc(char c)
-{
-    volatile uint32_t *uart = (uint32_t *)UART_ADDR;
-    *uart = (uint32_t)c;
-}
+    while (1) {
 
-static void print_hex(uint32_t v)
-{
-    const char hex[] = "0123456789ABCDEF";
-    for (int i = 7; i >= 0; i--)
-        uart_putc(hex[(v >> (i * 4)) & 0xF]);
-}
+        // WRITE to GPIO
+        *gpio = val;
 
-static void print_string(const char *s)
-{
-    while (*s)
-        uart_putc(*s++);
-}
+        // force ordering (important for simulation)
+        asm volatile ("" ::: "memory");
 
-int main(void)
-{
-    volatile uint32_t *gpio = (uint32_t *)GPIO_ADDR;
+        // READ back
+        unsigned int read_val = *gpio;
 
-    // ---------------------------
-    // WRITE TEST
-    // ---------------------------
-    *gpio = 0xA5;
-    asm volatile ("" ::: "memory");   // prevent optimization
+        // simple check (optional logic)
+        if (read_val != val) {
+            // error pattern
+            *gpio = 0x1F;
+            while (1);
+        }
 
-    // ---------------------------
-    // READ TEST
-    // ---------------------------
-    uint32_t val = *gpio;
+        // increment pattern (5-bit for LEDs)
+        val = (val + 1) & 0x1F;
 
-    // ---------------------------
-    // PRINT RESULT
-    // ---------------------------
-    print_string("GPIO readback = 0x");
-    print_hex(val);
-    print_string("\n");
-
-    // ---------------------------
-    // SECOND WRITE (VERIFY UPDATE)
-    // ---------------------------
-    *gpio = 0x3C;
-    val = *gpio;
-
-    print_string("GPIO new value = 0x");
-    print_hex(val);
-    print_string("\n");
-
-    // End simulation
-    asm volatile ("ecall");
-
-    return 0;
+        delay();
+    }
 }
