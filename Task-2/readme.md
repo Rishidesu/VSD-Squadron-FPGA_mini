@@ -1,61 +1,63 @@
-#  RISC-V SoC GPIO Integration & Simulation
+# 🚀 RISC-V SoC GPIO Integration & Simulation
 
 ## Overview
 
-This project extends a basic **RV32I RISC-V SoC** by integrating a **memory-mapped GPIO peripheral**, validating it through firmware, and verifying functionality using simulation tools.
+This project extends a basic **RV32I RISC-V SoC** by integrating a **memory-mapped GPIO peripheral**, validating it through simulation, and verifying correct read/write behavior.
 
-The goal is to demonstrate:
+It demonstrates:
 
-* Memory-mapped peripheral design
-* SoC-level integration
-* Firmware-driven validation
-* End-to-end verification
+- Memory-mapped peripheral design  
+- SoC-level integration  
+- Bus protocol (read/write timing)  
+- Simulation-based verification  
 
 ---
 
-##  1. GPIO IP Design
+# 🧱 1. GPIO IP Design
 
-###  Module: `gpio_ip.v`
+## Module: `gpio_ip.v`
 
-A simple 32-bit memory-mapped register:
+A simple 32-bit register:
 
-* Write → updates GPIO output
-* Read → returns last written value
+- Write → updates GPIO output  
+- Read → returns stored value  
 
 ```verilog
-`timescale 1ns/1ps
-
 module gpio_ip (
     input clk,
     input resetn,
-    input wr_en,
-    input rd_en,
+
+    input        sel,
+    input        wr_en,
+    input        rd_en,
+    input [3:0]  addr,
+
     input [31:0] wdata,
     output reg [31:0] rdata,
+
     output reg [31:0] gpio_data
 );
 
-reg [31:0] gpio_reg;
+    reg [31:0] gpio_reg;
 
-// Write logic
-always @(posedge clk) begin
+    localparam ADDR_DATA = 4'h0;
+
+   always @(posedge clk or negedge resetn) begin
     if (!resetn) begin
-        gpio_reg  <= 32'b0;
-        gpio_data <= 32'b0;
-    end else if (wr_en) begin
-        gpio_reg  <= wdata;
+        gpio_reg <= 0;
+        gpio_data <= 0;
+    end
+    else if (sel && wr_en) begin   
+        gpio_reg <= wdata;
         gpio_data <= wdata;
     end
 end
-
-// Read logic
-always @(posedge clk) begin
-    if (!resetn) begin
-        rdata <= 32'b0;
-    end else if (rd_en) begin
-        rdata <= gpio_reg;
-    end
-end
+   always @(*) begin
+    if (sel && rd_en)
+        rdata = gpio_reg;
+    else
+        rdata = 32'b0;
+	end
 
 endmodule
 ```
@@ -90,22 +92,14 @@ wire gpio_rd_en = gpio_sel && mem_rstrb;
 ###  IP Instantiation
 
 ```verilog
-// -----------------------------------
-// GPIO WIRES
-// -----------------------------------
-wire [31:0] gpio_rdata;
-wire [31:0] gpio_data;
-
 gpio_ip GPIO (
     .clk(clk),
     .resetn(resetn),
-
+    .sel(gpio_sel),
     .wr_en(gpio_wr_en),
     .rd_en(gpio_rd_en),
-
     .wdata(mem_wdata),
     .rdata(gpio_rdata),
-
     .gpio_data(gpio_data)
 );
 ```
@@ -118,7 +112,10 @@ wire [31:0] IO_rdata =
     gpio_sel ? gpio_rdata :32'b0;
 assign mem_rdata = isRAM ? RAM_rdata : IO_rdata;
 ```
-
+#### Read Mux
+```
+assign mem_rdata = isRAM ? RAM_rdata : gpio_rdata;
+```
 ---
 
 ## 3. Simulation Setup
@@ -149,15 +146,29 @@ end
 
 ---
 
-##  4. Firmware Interface
+#### ⚙️ 4. Processor (FSM Test CPU)
+
+This project uses a dummy FSM-based CPU for verification.
+
+Behavior
+Alternates WRITE → READ → HOLD
+Writes incrementing values to GPIO
+Reads back (optional)
+```
+localparam WRITE  = 0;
+localparam W_IDLE = 1;
+localparam READ   = 2;
+localparam R_HOLD = 3;
+```
+##  5. Firmware Interface
 
 ###  Address Definition
 
 ```c
-#define IO_BASE   0x00400000
-#define GPIO_ADDR (IO_BASE + 0x20)
+#define IO_BASE     0x00400000
+#define GPIO_ADDR   (IO_BASE + 0x20)
 
-volatile uint32_t *gpio = (uint32_t *)GPIO_ADDR;
+volatile unsigned int *gpio = (unsigned int *)GPIO_ADDR;
 ```
 
 ###  Behavior
@@ -168,28 +179,84 @@ volatile uint32_t *gpio = (uint32_t *)GPIO_ADDR;
 * Exit using `ecall`
 
 ---
+## ▶️ 6. How to Run/Simulation
+Step 1 — Clean old files
+```
+rm -f riscv_tb.vvp soc.vcd
+```
+Step 2 — Compile
+```
+iverilog -DBENCH -o riscv_tb.vvp riscv.v gpio_ip.v riscv_tb.v
+```
+Step 3 — Run simulation
+```
+vvp riscv_tb.vvp
+```
+Step 4 — Open waveform
+```
+gtkwave soc.vcd
+```
 
-##  5. Simulation Results
+## 6.Signals Observed
 
-###  Observed Signals
+### CPU / Bus Signals
+- mem_addr
+- mem_wdata
+- mem_wmask
+- mem_rstrb
 
-* `clk`, `resetn`
-* `mem_addr`, `mem_wmask`
-* `gpio_data`, `rdata`
-* `mem_rdata`, `mem_wdata`
-* `gpio_sel`, `wr_en`, `rd_en`
+### Address Decode
+- isIO
+- isRAM
+- mem_wordaddr
+- gpio_sel
 
-###  Execution Flow
+### GPIO Control
+- gpio_wr_en
+- gpio_rd_en
 
-1. CPU writes to `0x00400020`
-2. GPIO captures value into register
-3. CPU performs read operation
-4. Stored value returned via `mem_rdata`
-5. UART prints result
-6. Simulation exits using `ecall`
+### GPIO Data
+- gpio_data
+- gpio_rdata
 
-All behaviors matched expected functionality
+### Output
+- LEDS
 
+### Read Path
+- mem_rdata
+
+
+
+## Signals Observed
+
+### CPU / Bus Signals
+- mem_addr
+- mem_wdata
+- mem_wmask
+- mem_rstrb
+
+### Address Decode
+- isIO
+- isRAM
+- mem_wordaddr
+- gpio_sel
+
+### GPIO Control
+- gpio_wr_en
+- gpio_rd_en
+
+### GPIO Data
+- gpio_data
+- gpio_rdata
+
+### Output
+- LEDS
+
+### Read Path
+- mem_rdata
+
+### RAM (optional)
+- RAM_rdata
 ---
 
 
