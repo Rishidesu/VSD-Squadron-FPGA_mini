@@ -1,10 +1,11 @@
-
 module gpio_ip (
     input clk,
     input resetn,
 
-    input wr_en,
-    input rd_en,
+    input        sel,
+    input        wr_en,
+    input        rd_en,
+    input [3:0]  addr,
 
     input [31:0] wdata,
     output reg [31:0] rdata,
@@ -14,23 +15,23 @@ module gpio_ip (
 
     reg [31:0] gpio_reg;
 
-    // Write logic (synchronous)
-    always @(posedge clk or negedge resetn) begin
-        if (!resetn) begin
-            gpio_reg  <= 32'b0;
-            gpio_data <= 32'b0;
-        end else if (wr_en) begin
-            gpio_reg  <= wdata;
-            gpio_data <= wdata;
-        end
-    end
+    localparam ADDR_DATA = 4'h0;
 
-    // Read logic (combinational)
-    always @(*) begin
-        if (rd_en)
-            rdata = gpio_reg;
-        else
-            rdata = 32'b0;
+   always @(posedge clk or negedge resetn) begin
+    if (!resetn) begin
+        gpio_reg <= 0;
+        gpio_data <= 0;
     end
+    else if (sel && wr_en) begin   
+        gpio_reg <= wdata;
+        gpio_data <= wdata;
+    end
+end
+   always @(*) begin
+    if (sel && rd_en)
+        rdata = gpio_reg;
+    else
+        rdata = 32'b0;
+	end
 
 endmodule
