@@ -116,12 +116,14 @@ int main() {
 }
 ```
 ##  Simulation Results
+
 ✔ Write Behavior
 - mem_wmask = 1111
 - mem_addr = 0x00400020
 - gpio_data = 0x0000000A
 - gpio_out = 0x0000000A
 - LEDS = 01010
+
 ✔ Read Behavior
 - gpio_rdata correctly reflects register values
 - Read logic fixed using combinational approach
@@ -144,7 +146,7 @@ gtkwave soc.vcd
 - **Issue:** `rs1` and `rs2` were not assigned  
 - **Fix:** Added proper register file read logic  
 
----
+
 
 ### 2. Toolchain ABI Mismatch
 - **Issue:** ELF32 vs ELF64 conflict during linking  
@@ -169,6 +171,8 @@ gtkwave soc.vcd
 
 Removed during debugging to isolate GPIO functionality
 
+---
+
 ## LED Behavior
 - LEDs are connected to `gpio_out[4:0]`
 - LEDs reflect **only output pins**
@@ -178,6 +182,49 @@ Removed during debugging to isolate GPIO functionality
 always @(posedge clk)
     LEDS <= gpio_out[4:0];
 ```
+---
+## 🔍 Write & Readback Behaviour
 
+### 🔧 What Happens in RTL
+
+#### `gpio_wr_en` is asserted when:
+- CPU accesses **IO space**
+- Address matches **GPIO region**
+- `mem_wmask` is non-zero (store instruction)
+
+---
+
+#### Based on register offset:
+- Offset `0x00` → `gpio_data` is updated  
+- Offset `0x04` → `gpio_dir` is updated  
+
+---
+
+### 🧪 Simulation Behaviour
+```
+gpio_data = 0x0000000A
+gpio_dir  = 0x0000001F
+gpio_out  = gpio_data & gpio_dir
+```
+---
+##  Final Validation
+- GPIO_DATA = last written value (0x0A)
+- GPIO_DIR = configured directions
+- GPIO_READ = merged pin state (0xAA)
+- Simulation completes successfully
+
+
+---
+
+## ✅ Conclusion
+
+```text
+Key Outcomes:
+
+✔ Designed a multi-register GPIO IP
+✔ Integrated successfully into a RISC-V SoC
+✔ Verified correct write and readback behavior
+✔ Achieved end-to-end validation (C → RTL → Waveform)
+```
 
 
