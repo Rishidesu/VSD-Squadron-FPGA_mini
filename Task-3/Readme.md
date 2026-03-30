@@ -1,4 +1,8 @@
-## 🎯 Objective
+#  GPIO Control IP and SoC Integration
+
+---
+
+##  Objective
 
 The goal of this project was to design and integrate a **multi-register GPIO Control IP** into a RISC-V SoC, enabling software-driven control using memory-mapped I/O.
 
@@ -16,7 +20,7 @@ The GPIO IP includes:
 
 ---
 
-## ⚙️ System Architecture
+##  System Architecture
 
 - **CPU**: Custom RV32I RISC-V core (minimal instruction support)
 - **Memory**: 6KB BRAM loaded using `firmware.hex`
@@ -29,33 +33,36 @@ C Program → ELF → HEX → BRAM → CPU → GPIO → LEDS
 
 
 
-## 🧠 Address Map
+##  Address Map
 
 ```
 IO Base Address = 0x00400000
 ```
-```
+## GPIO Registers
+---
 
 | Offset | Register     | Address       | Description |
 |--------|--------------|--------------|-------------|
 | 0x00   | GPIO_DATA    | 0x00400020   | Output data |
 | 0x04   | GPIO_DIR     | 0x00400024   | Direction   |
 | 0x08   | GPIO_READ    | 0x00400028   | Pin state   |
-```
+---
+
 ### Address Decoding (RTL)
 ```verilog
 wire gpio_sel = isIO &&
                (mem_wordaddr >= 30'h00100008) &&
                (mem_wordaddr <= 30'h0010000A);
 ```
-## 🧩 GPIO Control IP Design
+---
+##  GPIO Control IP Design
 Registers:
 - gpio_data → stores last written value
 - gpio_dir → controls direction per bit
 - gpio_out → driven output
 - gpio_in → input pins (constant in simulation)
 
-##✏️ Write Logic
+## Write Logic
 ```verilog
 if (sel && wr_en) begin
     case (addr)
@@ -65,14 +72,14 @@ if (sel && wr_en) begin
 end
 gpio_out <= gpio_data & gpio_dir;
 ```
-## 📥 Read Logic (Important Fix)
+##  Read Logic (Important Fix)
 
 Initially implemented as synchronous, causing read failures.
 
-### ❌ Problem
+###  Problem
 - CPU did not hold read signals long enough
 gpio_rdata remained zero
-### ✅ Fix (Combinational Read)
+###  Fix (Combinational Read)
 ``` verilog
 always @(*) begin
     if (sel && rd_en) begin
@@ -87,7 +94,7 @@ always @(*) begin
     end
 end
 ```
-## 💻 Firmware (C Code)
+##  Firmware (C Code)
 ``` C
 #define GPIO_BASE 0x00400020
 
@@ -108,7 +115,7 @@ int main() {
     return 0;
 }
 ```
-## 🧪 Simulation Results
+##  Simulation Results
 ✔ Write Behavior
 - mem_wmask = 1111
 - mem_addr = 0x00400020
@@ -118,3 +125,59 @@ int main() {
 ✔ Read Behavior
 - gpio_rdata correctly reflects register values
 - Read logic fixed using combinational approach
+
+## Commands Used
+
+``` bash
+make clean
+make
+iverilog -g2012 -DBENCH \
+-I vsdfpga_labs/basicRISCV/RTL \
+-o sim.out riscv.v gpio_ip_ctrl.v soc_tb.v ice40_stubs.v
+
+vvp sim.out
+gtkwave soc.vcd
+```
+##  Challenges & Debugging
+
+### 1. CPU Not Writing Correctly
+- **Issue:** `rs1` and `rs2` were not assigned  
+- **Fix:** Added proper register file read logic  
+
+---
+
+### 2. Toolchain ABI Mismatch
+- **Issue:** ELF32 vs ELF64 conflict during linking  
+- **Fix:** Forced correct ABI using:
+```bash
+-m elf32lriscv
+```
+
+### 3. Missing firmware_words
+
+- **Issue:**  HEX not generated
+
+- **Fix:**  Copied binary locally and updated Makefile
+
+### 4. GPIO Read Always Zero
+
+- **Issue:** synchronous read logic
+
+- **Fix:** changed to combinational read
+
+### 5. UART Complexity
+
+Removed during debugging to isolate GPIO functionality
+
+## LED Behavior
+- LEDs are connected to `gpio_out[4:0]`
+- LEDs reflect **only output pins**
+- Input pins do not drive LEDs
+
+```verilog
+always @(posedge clk)
+    LEDS <= gpio_out[4:0];
+```
+
+
+
