@@ -136,7 +136,7 @@ The SPI module supports:
 ### 📍 Address Mapping
 
 ```
-SPI_BASE = 0x0040_0080
+SPI_BASE = 0x00401000
 ```
 
 ---
