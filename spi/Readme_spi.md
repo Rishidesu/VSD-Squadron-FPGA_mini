@@ -158,6 +158,95 @@ SPI_BASE = 0x0040_0080
 | CS_N   | Output    | Active low chip select |
 
 ---
+## 💻 Firmware Usage
+
+This example demonstrates a **single SPI transfer** along with a **double START condition test**.
+
+---
+
+### 🔧 Register Definitions
+
+```c
+#define SPI_BASE   0x00401000
+
+#define SPI_CTRL   (*(volatile unsigned int*)(SPI_BASE + 0))
+#define SPI_TXDATA (*(volatile unsigned int*)(SPI_BASE + 4))
+#define SPI_RXDATA (*(volatile unsigned int*)(SPI_BASE + 8))
+#define SPI_STATUS (*(volatile unsigned int*)(SPI_BASE + 12))
+```
+
+---
+
+### 🧪 Example: Single Transfer with Double START
+
+```c
+void _start() {
+
+    // Initialize stack pointer
+    asm volatile("li sp, 0x00001800");
+
+    // Load transmit data
+    SPI_TXDATA = 0x01;
+
+    // Start first transfer
+    SPI_CTRL = (1<<0) | (1<<1) | (4<<8);
+
+    // Attempt second START immediately (while BUSY = 1)
+    SPI_CTRL = (1<<0) | (1<<1) | (4<<8);
+
+    // Wait for DONE flag
+    while((SPI_STATUS & (1<<1)) == 0);
+
+    // Read received data
+    volatile unsigned int data = SPI_RXDATA;
+
+    // Halt execution
+    while(1);
+}
+```
+
+---
+
+### 🔍 Expected Behavior
+
+| Step         | Description                       |
+| ------------ | --------------------------------- |
+| TXDATA write | Loads transmit byte (0x01)        |
+| First START  | Begins SPI transfer               |
+| Second START | Ignored while BUSY = 1            |
+| Transfer     | 8-bit data shifted over MOSI/MISO |
+| DONE         | Set after transfer completes      |
+| RXDATA       | Contains received byte            |
+
+---
+
+### ⚠️ Notes
+
+* Only one transfer occurs despite two START writes
+* Transfer size is fixed to **8 bits**
+* `DONE` indicates completion of transfer
+* `CLKDIV` controls SPI clock speed
+
+---
+
+
+## ⏱️ Clock Behavior
+
+* SCLK toggles every `(CLKDIV + 1)` system clock cycles
+* Full SCLK period = `2 × (CLKDIV + 1)`
+
+---
+
+## 🧠 Debug Tip
+
+If SPI is not working:
+
+* Check `SPI_BUSY` → stuck = FSM issue
+* Check `SPI_DONE` → never set = transfer not completing
+* Check `CS_N` → must stay LOW during transfer
+* Verify MOSI/MISO timing using waveform
+
+---
 
 
 
@@ -199,71 +288,234 @@ SPI_BASE = 0x0040_0080
 * Must stay LOW for entire 8-bit transfer
 
 ---
+## 🚧 Challenges Faced & Fixes
 
-## 🛠️ Build Flow
+| Challenge                      | Description                                                                          | Fix                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| DONE flag (W1C) implementation | DONE was initially cleared when START was written, causing incorrect status behavior | Implemented proper **Write-1-to-Clear (W1C)** logic in STATUS register                                             |
+| TX_READY logic                 | TX_READY was incorrectly hardcoded and not reflecting BUSY state                     | Corrected to `TX_READY = !BUSY` for accurate readiness indication                                                  |
+| BUSY handling                  | START and TXDATA were not fully protected during active transfer                     | Added conditions to ignore START and TXDATA writes when `BUSY = 1`                                                 |
+| SPI–CPU Integration            | Difficulty in mapping SPI into RISC-V memory space and handling read/write strobes   | Implemented proper **address decoding** and connected SPI through `mem_addr`, `mem_wmask`, and `mem_rstrb` signals |
+| Address Mapping Confusion      | Initial mismatch between firmware base address and RTL decode logic                  | Aligned firmware (`0x00401000`) with RTL decode condition (`mem_addr[31:12]`)                                      |
+| PCF File Issues                | FPGA pin constraints failed due to incorrect package/variant selection               | Corrected FPGA **device variant and package (e.g., hx8k, cb132)** to match board                                   |
+| Pin Mapping Errors             | PCF file used incompatible or symbolic pin names                                     | Updated PCF to use **valid numerical pin assignments** supported by the target FPGA                                |
+| Toolchain Errors               | Synthesis / PnR failures due to mismatched constraints                               | Ensured consistency between **PCF, nextpnr arguments, and actual FPGA hardware**                                   |
 
-### 1. Firmware Compilation
+---
+
+## ⚙️ Toolchain Setup (Ubuntu)
+
+The following tools are required to build and program the SPI SoC on FPGA.
+
+---
+
+### 🔧 1. Install Dependencies
 
 ```bash
-riscv64-unknown-elf-gcc -Os \
-  -march=rv32i -mabi=ilp32 \
-  -ffreestanding -nostdlib \
-  start.S main.c \
-  -Wl,-T,link.ld \
-  -o firmware.elf
+sudo apt update
 
-riscv64-unknown-elf-objcopy -O ihex firmware.elf firmware.hex
+sudo apt install -y \
+  build-essential \
+  git \
+  yosys \
+  nextpnr-ice40 \
+  icestorm 
 ```
 
 ---
 
-### 2. RTL Synthesis
+### ⚡ 2. RISC-V Toolchain
+
+Install RISC-V GCC:
 
 ```bash
-yosys -p "
-read_verilog riscv.v spi.v
-synth_ice40 -top SOC -json soc.json
-"
+sudo apt install -y gcc-riscv64-unknown-elf
+```
+
+Verify installation:
+
+```bash
+riscv64-unknown-elf-gcc --version
 ```
 
 ---
 
-### 3. Place & Route
+### ❄️ 3. Icestorm Tools (icepack, iceprog)
+
+These are typically included in the `icestorm` package.
+
+Verify:
+
+```bash
+which icepack
+which iceprog
+```
+
+If not found, install manually:
+
+```bash
+sudo apt install -y fpga-icestorm
+```
+
+---
+
+### 🔍 4. Verify All Tools
+
+```bash
+yosys -V
+nextpnr-ice40 --version
+iceprog -h
+iverilog -V
+```
+
+---
+
+### ⚠️ USB Permissions (Important for iceprog)
+
+If `iceprog` fails to detect FPGA:
+
+```bash
+sudo usermod -aG plugdev $USER
+```
+
+Then logout and login again.
+
+---
+
+### 🧠 Notes
+
+* FPGA target used: **Lattice iCE40 UP5K (SG48 package)**
+* Ensure PCF file matches your board pinout
+* Use `make` to build and `make flash` to program
+
+---
+
+
+
+
+
+## 🛠️ Build Flow (Using Makefile)
+
+The project uses a **Makefile-based flow** to automate firmware generation, synthesis, place & route, and programming.
+
+---
+
+### 🔧 1. Complete Build
+
+```bash
+make
+```
+
+This performs:
+
+* Firmware compilation (`firmware.c → firmware.hex`)
+* RTL synthesis using Yosys
+* Place & Route using nextpnr
+* Bitstream generation using icepack
+
+---
+
+### ⚡ 2. FPGA Programming
+
+```bash
+make flash
+```
+
+* Programs the generated bitstream (`SOC.bin`) onto FPGA using `iceprog`
+
+---
+
+### 🧪 3. Simulation
+
+```bash
+make sim
+```
+
+* Compiles testbench using `iverilog`
+* Runs simulation using `vvp`
+* Uses `firmware.hex` for program execution
+
+---
+
+### 🧹 4. Clean Build Files
+
+```bash
+make clean
+```
+
+* Removes all generated files:
+
+  * `.elf`, `.bin`, `.hex`
+  * `.json`, `.asc`
+  * simulation outputs (`.vvp`, `.vcd`)
+
+---
+
+## 🔍 Internal Flow Breakdown
+
+### Firmware Generation
+
+```bash
+riscv64-unknown-elf-gcc -O0 -march=rv32i -mabi=ilp32 \
+  -nostdlib -ffreestanding \
+  -T link.ld -Wl,-e,_start \
+  firmware.c -o firmware.elf
+
+riscv64-unknown-elf-objcopy -O binary firmware.elf firmware.bin
+
+hexdump -v -e '1/4 "%08x\n"' firmware.bin > firmware.hex
+```
+
+---
+
+### RTL Synthesis
+
+```bash
+yosys -p "synth_ice40 -top SOC -json SOC.json" riscv.v spi.v
+```
+
+---
+
+### Place & Route
 
 ```bash
 nextpnr-ice40 \
-  --hx8k \
-  --package cb132 \
+  --json SOC.json \
   --pcf VSDSquadronFM.pcf \
-  --pcf-allow-unconstrained \
-  --json soc.json \
-  --asc soc.asc
+  --asc SOC.asc \
+  --up5k \
+  --package sg48 \
+  --pcf-allow-unconstrained
 ```
 
 ---
 
-### 4. Bitstream Generation
+### Bitstream Generation
 
 ```bash
-icepack soc.asc soc.bin
+icepack SOC.asc SOC.bin
 ```
 
 ---
 
-### 5. FPGA Programming
+## ⚠️ Important Notes
 
-```bash
-iceprog soc.bin
-```
+* FPGA target: **UP5K (SG48 package)**
+* Ensure PCF file matches selected package
+* Firmware is automatically embedded via `firmware.hex`
+
+---
 
 ---
 
 ## 🚧 Limitations
 
-* Single-byte transfers only
-* No FIFO
-* No interrupt support
-* No multi-slave support
+* Single-byte (8-bit) transfers only
+* No FIFO buffering (CPU must manage every transfer)
+* No interrupt support (polling required)
+* No multi-slave support (single CS_N only)
+* No back-to-back/pipelined transfers
+* Limited error handling (no timeout or fault detection)
 
 ---
 
@@ -272,25 +524,20 @@ iceprog soc.bin
 This SPI Master IP provides:
 
 * A **minimal and functional SPI implementation**
-* Clean **memory-mapped interface**
-* Correct **Mode 0 timing behavior**
+* Clean **memory-mapped interface with proper control/status handling**
+* Correct **Mode 0 timing (CPOL=0, CPHA=0)**
+* Improved **status handling with BUSY protection and DONE W1C behavior**
 
 It is suitable for:
 
 * Basic SPI communication
-* Learning SoC peripheral design
-* Further extension (multi-byte, FIFO, interrupts)
+* Learning **SoC peripheral design and integration**
+* Understanding **hardware–software interaction via memory-mapped IO**
+* Future extensions (multi-byte, FIFO, interrupts)
 
 ---
 
-## ⚡ Final Reality Check
 
-If your SPI:
+---
 
-* Doesn’t align MOSI/MISO with correct edges
-* Doesn’t hold CS_N properly
-* Doesn’t enforce BUSY
 
-Then this README is just decoration.
-
-Fix your RTL before you feel proud of this.
