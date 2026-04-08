@@ -15,7 +15,7 @@ void _start() {
     // ================= TEST START =================
 
     // Load data
-    SPI_TXDATA = 0x01;
+    SPI_TXDATA = 0xA5;
 
     // Start FIRST transfer
     SPI_CTRL = (1<<0) | (1<<1) | (4<<8);
