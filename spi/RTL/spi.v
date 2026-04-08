@@ -64,25 +64,33 @@ always @(posedge clk) begin
         if(sel && w_en) begin
             case(offset)
 
+                // ================= CTRL =================
                 CTRL: begin
                     en <= wdata[0];
                     clkdiv <= wdata[15:8];
 
+                    // START only if not busy
                     if(wdata[1] && !busy)
                         start <= 1;
-                    if(wdata[1])
-        		done <= 0;
                 end
 
-                TXDATA: tx_reg <= wdata[7:0];
+                // ================= TXDATA =================
+                TXDATA: begin
+                    if(!busy) // protect write
+                        tx_reg <= wdata[7:0];
+                end
 
-                
+                // ================= STATUS (W1C) =================
+                STATUS: begin
+                    // DONE W1C
+                    if(wdata[1])
+                        done <= 0;
+                end
 
             endcase
         end
     end
 end
-
 // =================================================
 // CLOCK GENERATION (toggle every CLKDIV+1)
 // =================================================
@@ -196,7 +204,7 @@ always @(posedge clk) begin
             CTRL:   rdata <= {16'd0, clkdiv, 7'd0, en};
             TXDATA: rdata <= {24'd0, tx_reg};
             RXDATA: rdata <= {24'd0, rxdata};
-            STATUS: rdata <= {29'd0, 1'b1, done, busy}; // TX_READY=1
+            STATUS: rdata <= {29'd0, !busy, done, busy};
             default: rdata <= 0;
         endcase
     end else begin
