@@ -248,10 +248,6 @@ If SPI is not working:
 
 ---
 
-
-
----
-
 ## 🧪 Expected Behavior
 
 * Only **one transfer at a time**
@@ -261,7 +257,135 @@ If SPI is not working:
 * DONE asserted after completion
 * RXDATA is updated ONLY after full 8-bit transfer completes
 * Intermediate bits are not visible to CPU
-  
+---
+## 🔍 Simulation vs Hardware Behavior
+
+Different transmit values were used for **simulation** and **hardware validation** to simplify debugging and observation.
+
+---
+
+### 🧪 Simulation (Functional Verification)
+
+* **TXDATA = 0xA5**
+* Binary: `10100101`
+
+#### Purpose:
+
+* Provides a **mixed bit pattern** (alternating 1s and 0s)
+* Useful for verifying:
+
+  * Correct **bit shifting**
+  * Proper **MOSI output sequence**
+  * Accurate **MISO sampling**
+  * Full 8-bit transfer behavior in waveform
+
+---
+
+### 🔧 Hardware (FPGA Testing)
+
+* **TXDATA = 0x01**
+* Binary: `00000001`
+* Just in firmware.c change spi_txdata to 0x01.
+
+### Video for verification
+
+
+https://github.com/user-attachments/assets/6acc8954-e1c5-4e68-ade8-cb7ee66490e6
+
+
+#### Purpose:
+
+* Only **LSB = 1**, all other bits = 0
+* Simplifies hardware observation using LED
+## 📌 PCF Configuration (LED Mapping)
+
+For hardware validation, only a single LED pin was constrained in the PCF file.
+
+---
+
+### 🔧 LED Pin Assignment
+
+```pcf
+set_io LED 39
+```
+
+---
+
+### 📍 Details
+
+* Pin **39** corresponds to the onboard LED of the **VSDSquadron FPGA Mini Board**
+* The pin mapping was taken from the **board datasheet**
+* No other IO pins were constrained for this test
+
+---
+
+### 💡 Purpose
+
+* Used for **basic hardware verification**
+
+* LED is driven by:
+
+  ```verilog
+  assign LED = RXDATA[0];
+  ```
+
+* Behavior:
+
+  * `RXDATA[0] = 1` → LED ON
+  * `RXDATA[0] = 0` → LED OFF
+
+---
+
+### ⚠️ Notes
+
+* Only minimal pin configuration was used
+* Remaining pins were left unconstrained (`--pcf-allow-unconstrained`)
+* Suitable for **simple validation**, not full IO testing
+
+---
+
+### 🧠 Insight
+
+Using a single LED:
+
+* Reduces complexity during initial bring-up
+* Provides quick visual confirmation of SPI data reception
+
+---
+
+---
+
+### 💡 LED Debug Behavior
+
+* On FPGA:
+
+  ```verilog
+  LED = RXDATA[0];
+  ```
+* As you can see that rxdata in terminal is **01** (its showing spi test failed because statements written fr A5 testing is still in the code and i have removed it later as you can see in rtl and its just written in Testbench so it doesnt affect the synthesis and hardware validation, done before this hardware validation).
+* Result:
+
+  * If received data LSB = 1 → **LED turns ON**
+  * If received data LSB = 0 → **LED remains OFF**
+
+---
+
+### 🎯 Why This Approach?
+
+* Complex patterns (like `0xA5`) are ideal for **waveform debugging**
+* Simple patterns (like `0x01`) are ideal for **visual hardware validation**
+
+This ensures:
+
+* Correct **protocol behavior in simulation**
+* Clear **pass/fail indication on hardware**
+
+---
+
+### ⚠️ Important Note
+
+* Hardware verification here confirms only **basic functionality**
+---
 
 ---
 
