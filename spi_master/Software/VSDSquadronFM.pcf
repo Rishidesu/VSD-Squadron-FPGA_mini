@@ -1,0 +1,18 @@
+# ---------- RESET ----------(do this if you have leds and breadboard)(i used LEDS[0] as pin for testing and needed only led from the fpga board-pin no.39)
+set_io RESET 21
+
+
+#------------CLK----------
+set_io CLK 32
+# ---------- UART ----------
+set_io TXD 4
+set_io RXD 3
+
+# ---------- SPI ----------
+set_io sclk 34
+set_io mosi 35
+set_io miso 36
+set_io cs_n 37
+
+# ---------- LEDS ----------
+set_io LED 39
