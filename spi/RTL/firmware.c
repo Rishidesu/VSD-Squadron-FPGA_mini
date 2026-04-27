@@ -20,7 +20,7 @@ void _start() {
     // Start FIRST transfer
     SPI_CTRL = (1<<0) | (1<<1) | (4<<8);
 
-    // 🔥 IMMEDIATELY try SECOND START (while BUSY should be 1)
+    //  IMMEDIATELY try SECOND START (while BUSY should be 1)
     SPI_CTRL = (1<<0) | (1<<1) | (4<<8);
 
     // Wait for transfer to complete
