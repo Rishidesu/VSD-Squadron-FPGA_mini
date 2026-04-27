@@ -265,6 +265,7 @@ SPI_CLK = SYS_CLK / (2 × CLKDIV)
 
 Example:
 TXDATA = 0xA5 → RXDATA = 0xA5
+
 Example(used to hardware testing):
 TXDATA= 0x01 → RXDATA = 0x01
 
