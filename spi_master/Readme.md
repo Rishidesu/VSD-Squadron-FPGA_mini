@@ -327,3 +327,7 @@ TXDATA= 0x01 → RXDATA = 0x01
 * Usage → docs/Example_Usage.md
 
 ---
+## 15. Demonstration
+
+- Waveform screenshots → docs/media/
+- Hardware demo video → <https://drive.google.com/file/d/1d5xRnOXUBnHz3TlQ7JbTWyJ9_1YxGVs8/view?usp=sharing>
