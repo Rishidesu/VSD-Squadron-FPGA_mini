@@ -6,39 +6,40 @@
 
 This IP implements a **memory-mapped SPI Master controller** integrated into a RISC-V SoC for the VSDSquadron FPGA platform.
 
-The SPI controller is controlled entirely through register writes and reads over the processor memory bus, enabling software-driven SPI communication with external peripherals.
+The SPI controller is controlled entirely through register reads and writes over the processor memory bus, enabling software-driven communication with external SPI peripherals.
 
 This IP is designed for:
 
 * Simplicity
-* Deterministic behavior
-* Easy integration into lightweight SoCs
+* Deterministic operation
+* Easy integration without modifying RTL
 
 ---
 
-## 2. Key Characteristics (Reality, Not Marketing)
+## 2. Key Characteristics
 
-* **SPI Mode Supported**: Mode 0 only (CPOL = 0, CPHA = 0)
-* **Data Width**: 8-bit transfers only
-* **Operation Type**: Polling-based (no interrupts)
+* **SPI Mode Supported**: Mode 0 (CPOL = 0, CPHA = 0)
+* **Data Width**: 8-bit transfers (MSB-first)
+* **Operation Type**: Polling-based
 * **Clocking**: Programmable clock divider
 * **Transfer Type**: Single-byte transactions
-* **Chip Select**: Automatically managed per transaction
+* **Chip Select**: Automatically controlled per transfer
 
 ---
 
 ## 3. System Context
 
-This SPI IP is integrated into a RISC-V SoC using a **memory-mapped interface**.
+The SPI IP is integrated as a **memory-mapped peripheral** in the RISC-V SoC.
 
-* Address decoding is handled at SoC level
-* SPI is selected when address matches a fixed region
-* CPU interacts via load/store instructions
+### Address Mapping
 
-From the SoC:
+* **Base Address**: `0x00401000`
+* **Register Offset**: Derived from `mem_addr[3:2]`
 
-* SPI is mapped using address match logic 
-* Communication occurs via standard memory signals (read/write strobes, data bus)
+### Selection Logic
+
+* SPI is selected when upper address bits match the SPI region
+* CPU interacts via standard load/store instructions
 
 ---
 
@@ -74,31 +75,36 @@ Address Decode (SPI Select)
 
 ### 5.1 Operation Flow
 
-1. Software configures SPI (enable + clock divider)
-2. Software writes transmit data
-3. Software triggers transfer
+1. Configure SPI (enable + clock divider)
+2. Write transmit data
+3. Trigger transfer
 4. SPI hardware:
 
-   * Asserts chip select
-   * Generates SPI clock
+   * Drives CS low
+   * Generates clock
    * Shifts data out (MOSI)
    * Samples data in (MISO)
 5. Transfer completes
-6. Status flag is set
-7. Received data becomes available
+6. DONE flag is set
+7. Received data is available
 
 ---
 
-### 5.2 Internal Behavior
+### 5.2 Timing Behavior
 
-* Transfer is controlled by a **finite state machine**
-* Clock is generated internally using a divider
-* Data is:
+* Clock idle state: LOW
+* Data sampled on **rising edge**
+* Data shifted on **falling edge**
 
-  * **Shifted out on falling edge**
-  * **Sampled on rising edge**
+→ This corresponds to **SPI Mode 0**
 
-This confirms **SPI Mode 0 behavior** 
+---
+
+### 5.3 Clock Generation
+
+SPI clock is derived from system clock:
+
+SPI_CLK = SYS_CLK / (2 × CLKDIV)
 
 ---
 
@@ -113,44 +119,66 @@ This confirms **SPI Mode 0 behavior**
 
 ---
 
-### 6.1 CTRL Register
+### 6.1 CTRL Register (0x00)
 
-**Fields:**
+| Bit  | Name   | Description                  |
+| ---- | ------ | ---------------------------- |
+| 0    | ENABLE | Enable SPI                   |
+| 1    | START  | Start transfer (auto-clears) |
+| 15:8 | CLKDIV | Clock divider                |
 
-* Enable bit → Enables SPI operation
-* Start bit → Initiates a transfer (auto-clears)
-* Clock Divider → Controls SPI clock speed
+**Reset Value:** 0x0000
 
 **Behavior:**
 
-* Transfer starts only if SPI is enabled and not busy
-* Start is ignored during active transfer
+* START is ignored if BUSY = 1
+* START auto-clears after one cycle
 
 ---
 
-### 6.2 TXDATA Register
+### 6.2 TXDATA Register (0x01)
 
-* Holds the byte to be transmitted
-* Write is ignored if SPI is busy
+| Bit Range | Description   |
+| --------- | ------------- |
+| [7:0]     | Transmit data |
+
+**Reset Value:** 0x00
+
+**Behavior:**
+
+* Write ignored if BUSY = 1
+* Data transmitted MSB-first
 
 ---
 
-### 6.3 RXDATA Register
+### 6.3 RXDATA Register (0x02)
 
-* Contains last received byte after transfer completion
+| Bit Range | Description   |
+| --------- | ------------- |
+| [7:0]     | Received data |
+
+**Reset Value:** Undefined
+
+**Behavior:**
+
+* Updated after transfer completion
 
 ---
 
-### 6.4 STATUS Register
+### 6.4 STATUS Register (0x03)
 
-**Flags:**
+| Bit | Name | Description                |
+| --- | ---- | -------------------------- |
+| 0   | BUSY | Transfer in progress       |
+| 1   | DONE | Transfer completed         |
+| 2   | IDLE | SPI idle (inverse of BUSY) |
 
-* Busy → SPI is currently transferring
-* Done → Transfer completed
+**Reset Value:** 0x0
 
-**Special Behavior:**
+**Behavior:**
 
-* Done flag is **write-one-to-clear (W1C)**
+* DONE is **Write-One-To-Clear (W1C)**
+* BUSY is controlled by hardware
 
 ---
 
@@ -158,126 +186,116 @@ This confirms **SPI Mode 0 behavior**
 
 ### 7.1 Initialization
 
+* Set CLKDIV
 * Enable SPI
-* Configure clock divider
 
-### 7.2 Data Transfer Sequence
+---
 
-1. Write transmit data
-2. Trigger transfer
-3. Poll status register until transfer completes
-4. Read received data
+### 7.2 Transfer Sequence
 
-### 7.3 Important Notes
+1. Write data to TXDATA
+2. Set START bit
+3. Poll STATUS until DONE = 1
+4. Read RXDATA
+5. Clear DONE
 
-* No queuing: one transfer at a time
-* Software must ensure SPI is idle before starting next transfer
-* Done flag must be cleared manually
+---
+
+### 7.3 Important Behavior Rules
+
+* START auto-clears
+* DONE must be cleared manually
+* TXDATA writes ignored during BUSY
+* Only one transfer allowed at a time
 
 ---
 
 ## 8. Integration Guide (VSDSquadron SoC)
 
-### 8.1 Required Files
+### 8.1 Required Components
 
-* SPI module (RTL)
-* SoC integration module
-
----
-
-### 8.2 Address Mapping
-
-SPI is selected when:
-
-* Address falls within a predefined region
-* Offset determines register access
-
-Example behavior:
-
-* Offset derived from lower address bits
-* Upper bits used for peripheral selection
+* SPI RTL module
+* SoC integration wrapper
 
 ---
 
-### 8.3 Bus Interface Signals
+### 8.2 Bus Interface Signals
 
-* Select signal (chip enable for SPI block)
-* Write enable
-* Read enable
-* Address offset
-* Write data
-* Read data
+* `sel` → SPI select
+* `w_en` → write enable
+* `r_en` → read enable
+* `offset` → register select (`mem_addr[3:2]`)
+* `wdata` → write data
+* `rdata` → read data
 
 ---
 
-### 8.4 External Signals
+### 8.3 External Signals
 
 | Signal | Direction | Description            |
 | ------ | --------- | ---------------------- |
 | sclk   | Output    | SPI clock              |
-| mosi   | Output    | Master data output     |
-| miso   | Input     | Slave data input       |
+| mosi   | Output    | Data to slave          |
+| miso   | Input     | Data from slave        |
 | cs_n   | Output    | Active-low chip select |
 
 ---
 
 ## 9. Board-Level Usage (VSDSquadron FPGA)
 
-### 9.1 Connections
+### Connections
 
-* Connect MOSI, MISO, SCLK, and CS to external SPI device
-* Ensure correct voltage compatibility
-* Optional: debug signals can be observed internally
+* Connect MOSI, MISO, SCLK, CS to SPI device
+* Ensure voltage compatibility
 
-### 9.2 Example Use Cases
+### Debug
 
-* Loopback test (MOSI connected to MISO)
-* Sensor interfacing
-* External SPI peripheral testing
+* Received SPI data can be observed via internal debug signals
+* LED may reflect received data (SoC-level mapping)
 
 ---
 
 ## 10. Validation & Expected Behavior
 
-### 10.1 Expected Observations
+### Loopback Test
 
-* CS goes low during transfer
-* SCLK toggles based on divider
-* MOSI outputs MSB-first data
-* MISO data captured correctly
+* Connect MOSI → MISO
+* Write any byte to TXDATA
+* Expected: RXDATA = transmitted value
 
----
-
-### 10.2 Debug Indicators
-
-* Busy = 1 during transfer
-* Done = 1 after completion
-* RXDATA updates after transfer
+Example:
+TXDATA = 0xA5 → RXDATA = 0xA5
+Example(used to hardware testing):
+TXDATA= 0x01 → RXDATA = 0x01
 
 ---
 
-### 10.3 SoC-Level Indicator
+### Expected Signals
 
-* LED is driven from received SPI data bit (debug path) 
+* CS goes LOW during transfer
+* SCLK toggles according to CLKDIV
+* MOSI shifts MSB-first
+* DONE asserted after transfer
 
 ---
 
-## 11. Known Limitations 
+## 11. Known Limitations
 
 * Only SPI Mode 0 supported
 * No CPOL/CPHA configurability
-* Single-byte transfer only
+* Single-byte transfers only
 * No FIFO or buffering
 * No interrupt support
-* No multi-slave handling
-* Software-driven only (no automation)
+* No DMA support
+* Single slave only
+* Software-driven operation
 
 ---
 
 ## 12. Folder Structure
 
 ```text
-/ip/spi_master/
+/spi_master/
   rtl/
   software/
   docs/
@@ -285,26 +303,26 @@ Example behavior:
     Register_Map.md
     Integration_Guide.md
     Example_Usage.md
-  README.md
+  Readme.md
 ```
 
 ---
 
-## 13. Quick Start (30-Second Integration)
+## 13. Quick Start (30 Seconds)
 
 1. Add SPI RTL to SoC
-2. Map SPI into memory space
-3. Connect SPI pins to external device
-4. Enable SPI via control register
-5. Write data and trigger transfer
-6. Poll status and read result
+2. Map base address to `0x00401000`
+3. Connect SPI pins
+4. Enable SPI
+5. Write TXDATA and trigger START
+6. Poll DONE and read RXDATA
 
 ---
 
 ## 14. Documentation Index
 
 * Register details → docs/Register_Map.md
-* Integration steps → docs/Integration_Guide.md
-* Usage examples → docs/Example_Usage.md
+* Integration → docs/Integration_Guide.md
+* Usage → docs/Example_Usage.md
 
 ---
