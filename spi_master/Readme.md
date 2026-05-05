@@ -24,6 +24,7 @@ This IP is designed for:
 * **Clocking**: Programmable clock divider
 * **Transfer Type**: Single-byte transactions
 * **Chip Select**: Automatically controlled per transfer
+<img width="1051" height="565" alt="image" src="https://github.com/user-attachments/assets/ba880ebe-5064-4664-9b72-79744a50c040" />
 
 ---
 
