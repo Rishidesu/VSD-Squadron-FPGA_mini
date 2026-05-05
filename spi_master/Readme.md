@@ -47,28 +47,70 @@ The SPI IP is integrated as a **memory-mapped peripheral** in the RISC-V SoC.
 ## 4. Block-Level Architecture
 
 ```text
-RISC-V CPU
-   |
-Memory Bus
-   |
-Address Decode (SPI Select)
-   |
--------------------------
-|   Register Interface   |
--------------------------
-           |
-     Control Logic (FSM)
-           |
-     Clock Generator
-           |
-     Shift Register
-      |        |
-    MOSI     MISO
-           |
-          SCLK
-           |
-          CS_N
+          ┌───────────────┐
+          │   RISC-V CPU  │
+          └──────┬────────┘
+                 │
+         mem_addr / mem_wdata / mem_rdata
+                 │
+        ┌────────▼─────────┐
+        │ Address Decoder  │
+        │ (spi_sel logic)  │
+        └──────┬───────────┘
+               │
+     ┌─────────▼──────────┐
+     │   SPI REGISTER IF  │  ← CTRL / TXDATA / STATUS
+     └─────────┬──────────┘
+               │
+        ┌──────▼────────┐
+        │   FSM Control │  ← IDLE / TRANSFER / FINISH
+        └──────┬────────┘
+               │
+     ┌─────────▼─────────┐
+     │ Clock Generator   │ ← clkdiv
+     └─────────┬─────────┘
+               │
+     ┌─────────▼─────────┐
+     │ Shift Register    │
+     │ (tx_reg / rx_reg) │
+     └──────┬─────┬──────┘
+            │     │
+          MOSI   MISO
+            │     │
+            └──┬──┘
+               ▼
+             SCLK
+               │
+              CS_N
 ```
+
+
+```
+CPU (RISC-V)
+   │
+   │  Write TXDATA / CTRL
+   ▼
+SPI Registers
+   │
+   ▼
+FSM Controller
+   │
+   ▼
+Shift Register
+   │        │
+  MOSI     MISO
+   │        │
+   └───SPI Bus───┘
+        │
+      SCLK
+        │
+       CS
+```
+
+
+#### Image showing all functions and data paths
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/794e515c-e1ca-4b02-acb1-f28bef44963c" />
+
 
 ---
 
