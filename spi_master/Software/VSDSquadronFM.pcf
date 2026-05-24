@@ -15,4 +15,4 @@ set_io miso 36
 set_io cs_n 37
 
 # ---------- LEDS ----------
-set_io LED 39
+set_io LED 40
